@@ -43,6 +43,7 @@ def main():
     parser.add_argument("--repo_path", type=str, dest="repo_path", help="Path to the cloned repo. If provided, git_url will not be used")
     parser.add_argument("--cleanup", dest="cleanup", action="store_true", help="Clean up all temporary result files")
     parser.add_argument('git_url', type=str, help='URL for secret searching')
+    parser.add_argument("--no-verify-ssl", dest="no_verify_ssl", action="store_true", help="Ignore SSL certificate warnings.")
     parser.set_defaults(regex=False)
     parser.set_defaults(rules={})
     parser.set_defaults(allow={})
@@ -52,6 +53,7 @@ def main():
     parser.set_defaults(branch=None)
     parser.set_defaults(repo_path=None)
     parser.set_defaults(cleanup=False)
+    parser.set_defaults(no_verify_ssl=False)
     args = parser.parse_args()
     rules = {}
     if args.rules:
@@ -90,7 +92,7 @@ def main():
                 path_exclusions.append(re.compile(pattern))
 
     output = find_strings(args.git_url, args.since_commit, args.max_depth, args.output_json, args.do_regex, do_entropy,
-            surpress_output=False, custom_regexes=regexes, branch=args.branch, repo_path=args.repo_path, path_inclusions=path_inclusions, path_exclusions=path_exclusions, allow=allow)
+            surpress_output=False, custom_regexes=regexes, branch=args.branch, repo_path=args.repo_path, path_inclusions=path_inclusions, path_exclusions=path_exclusions, allow=allow, no_verify_ssl=args.no_verify_ssl)
     project_path = output["project_path"]
     if args.cleanup:
         clean_up(output)
@@ -165,9 +167,14 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-def clone_git_repo(git_url):
+def clone_git_repo(git_url, no_verify_ssl):
     project_path = tempfile.mkdtemp()
-    Repo.clone_from(git_url, project_path)
+
+    if no_verify_ssl:
+        Repo.clone_from(git_url, project_path, env={'GIT_SSL_NO_VERIFY' : '1'})
+    else:
+        Repo.clone_from(git_url, project_path)
+
     return project_path
 
 def print_results(printJson, issue):
@@ -321,12 +328,12 @@ def path_included(blob, include_patterns=None, exclude_patterns=None):
 
 
 def find_strings(git_url, since_commit=None, max_depth=1000000, printJson=False, do_regex=False, do_entropy=True, surpress_output=True,
-                custom_regexes={}, branch=None, repo_path=None, path_inclusions=None, path_exclusions=None, allow={}):
+                custom_regexes={}, branch=None, repo_path=None, path_inclusions=None, path_exclusions=None, allow={}, no_verify_ssl=False):
     output = {"foundIssues": []}
     if repo_path:
         project_path = repo_path
     else:
-        project_path = clone_git_repo(git_url)
+        project_path = clone_git_repo(git_url, no_verify_ssl)
     repo = Repo(project_path)
     already_searched = set()
     output_dir = tempfile.mkdtemp()
